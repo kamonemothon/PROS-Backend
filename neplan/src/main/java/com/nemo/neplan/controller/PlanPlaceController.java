@@ -16,6 +16,8 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import com.nemo.neplan.model.KakaoApiResponse;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 @RestController
@@ -116,32 +118,47 @@ public class PlanPlaceController {
     @GetMapping("/calculateTime/{id}")
     public ResponseEntity<TimeDuration> calculateTime(@PathVariable Long id) {
         Plan plan = planService.getPlanById(id);
-        String departureTime = plan.getDepartureDatetime();
+
+        LocalDateTime departureDateTime = LocalDateTime.now().plusDays(1);
+
+        // Convert LocalDateTime to "yyyyMMddHHmm" format
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy.MM.dd'T'HH:mm");
+        String formattedDepartureTime = departureDateTime.format(formatter);
 
         List<PlanPlace> planPlaces = planPlaceService.getPlanPlacesByPlanId(id);
-        System.out.println("찾은 장소의 개수 : "+planPlaces.size());
+        System.out.println("찾은 장소의 개수: " + planPlaces.size());
         String waypointsString = buildWaypointsString(planPlaces);
         RestTemplate restTemplate = new RestTemplate();
 
         HttpHeaders headers = new HttpHeaders();
         headers.set("Authorization", "KakaoAK 45212e7b98de5fc6be36009fadc07ab5");
-//        headers.set("Authorization", "KakaoAK " + apikey);
-        headers.set("Content-Type","application/json");
-        System.out.println(waypointsString);
-
+        headers.set("Content-Type", "application/json");
 
         String apiUrl = "https://apis-navi.kakaomobility.com/v1/future/directions";
-
-
         UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(apiUrl)
-                .queryParam("origin", planPlaces.get(0).getPlace().getX() + "," +
-                        planPlaces.get(0).getPlace().getY())
-                .queryParam("destination", planPlaces.get(planPlaces.size() - 1).getPlace().getX() + "," +
-                        planPlaces.get(planPlaces.size() - 1).getPlace().getY())
-                .queryParam("departure_time", departureTime)
-                .queryParam("waypoints", waypointsString);
+                .queryParam("departure_time", formattedDepartureTime);
 
-        System.out.println(builder.toUriString()+"\n\n\n\n");
+        if (planPlaces.size() > 7) {
+            // Set origin and destination
+            builder.queryParam("origin", planPlaces.get(6).getPlace().getX() + "," +
+                            planPlaces.get(6).getPlace().getY())
+                    .queryParam("destination", planPlaces.get(planPlaces.size() - 1).getPlace().getX() + "," +
+                            planPlaces.get(planPlaces.size() - 1).getPlace().getY());
+
+            // Set waypoints
+            String intermediateWaypoints = buildWaypointsString(planPlaces.subList(0, planPlaces.size() - 1));
+            builder.queryParam("waypoints", intermediateWaypoints);
+        } else {
+            // Set origin and destination for size <= 7
+            builder.queryParam("origin", planPlaces.get(0).getPlace().getX() + "," +
+                            planPlaces.get(0).getPlace().getY())
+                    .queryParam("destination", planPlaces.get(planPlaces.size() - 1).getPlace().getX() + "," +
+                            planPlaces.get(planPlaces.size() - 1).getPlace().getY());
+
+            // Set waypoints as empty for size <= 7
+            builder.queryParam("waypoints", "");
+        }
+
         KakaoApiResponse response = restTemplate.getForObject(builder.toUriString(), KakaoApiResponse.class);
 
         TimeDuration timeDuration = new TimeDuration();
